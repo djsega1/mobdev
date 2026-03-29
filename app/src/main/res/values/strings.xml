@@ -1,3 +1,5 @@
 <resources>
-    <string name="app_name">mobdev</string>
+    <string name="app_name">Simple Calculator</string>
+    <string name="btn_clear">C</string>
+    <string name="error_value">Error</string>
 </resources>
