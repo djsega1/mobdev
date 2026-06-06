@@ -1,5 +1,6 @@
 package io.github.mobdev.data.dto
 
+import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
 
 @JsonClass(generateAdapter = true)
@@ -13,7 +14,9 @@ data class MessageDto(
 
 @JsonClass(generateAdapter = true)
 data class MessageDataDto(
+    @Json(name = "Text")
     val Text: TextPayloadDto?,
+    @Json(name = "Image")
     val Image: ImagePayloadDto?,
 )
 

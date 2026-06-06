@@ -43,6 +43,7 @@ fun ChatApp(viewModel: ChatViewModel) {
                             onUsernameChange = viewModel::onUsernameChange,
                             onPasswordChange = viewModel::onPasswordChange,
                             onLoginClick = viewModel::login,
+                            onErrorDismiss = viewModel::clearError,
                         )
                     }
 

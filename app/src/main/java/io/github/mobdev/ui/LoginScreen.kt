@@ -6,8 +6,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -24,6 +26,7 @@ fun LoginScreen(
     onUsernameChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
     onLoginClick: () -> Unit,
+    onErrorDismiss: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -61,9 +64,15 @@ fun LoginScreen(
         )
 
         state.error?.let { error ->
-            Text(
-                text = error,
-                modifier = Modifier.padding(top = 8.dp),
+            AlertDialog(
+                onDismissRequest = onErrorDismiss,
+                confirmButton = {
+                    TextButton(onClick = onErrorDismiss) {
+                        Text("OK")
+                    }
+                },
+                title = { Text("Ошибка входа") },
+                text = { Text(error) },
             )
         }
 

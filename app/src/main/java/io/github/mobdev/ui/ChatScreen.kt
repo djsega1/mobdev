@@ -77,7 +77,7 @@ fun ChatScreen(
 
             Button(
                 onClick = { viewModel.loadMessages() },
-                enabled = selectedChannel != null,
+                enabled = selectedChannel != null && !state.isLoading,
             ) {
                 Text("Обновить")
             }
@@ -111,6 +111,18 @@ fun ChatScreen(
                 .padding(horizontal = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            if (state.hasMoreMessages && state.messages.isNotEmpty()) {
+                item(key = "load_more") {
+                    Button(
+                        onClick = viewModel::loadOlderMessages,
+                        enabled = !state.isLoadingMore,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(if (state.isLoadingMore) "Загрузка..." else "Загрузить ещё")
+                    }
+                }
+            }
+
             items(state.messages, key = { it.id }) { message ->
                 MessageBubble(
                     message = message,

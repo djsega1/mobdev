@@ -3,12 +3,13 @@ package io.github.mobdev.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import io.github.mobdev.data.domain.MessageContent
+import io.github.mobdev.data.mapper.messageIdAsLong
 import io.github.mobdev.data.repository.ChatRepository
 import io.github.mobdev.data.session.CredentialsStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -22,12 +23,15 @@ class ChatViewModel(
 
     init {
         viewModelScope.launch {
-            credentialsStore.savedCredentials.collect { saved ->
-                if (saved != null && !_state.value.isLoggedIn) {
-                    _state.update {
-                        it.copy(username = saved.username, password = saved.password)
-                    }
+            val saved = credentialsStore.savedCredentials.first()
+            if (saved != null) {
+                _state.update {
+                    it.copy(
+                        username = saved.username,
+                        password = saved.password,
+                    )
                 }
+                loginInternal(saved.username, saved.password, saveCredentials = false)
             }
         }
 
@@ -51,6 +55,10 @@ class ChatViewModel(
         _state.update { it.copy(messageText = value, error = null) }
     }
 
+    fun clearError() {
+        _state.update { it.copy(error = null) }
+    }
+
     fun login() {
         val username = _state.value.username.trim()
         val password = _state.value.password
@@ -61,23 +69,45 @@ class ChatViewModel(
         }
 
         viewModelScope.launch {
-            _state.update { it.copy(isLoading = true, error = null) }
-
-            repository.login(username, password)
-                .onSuccess {
-                    credentialsStore.save(username, password)
-                    _state.update { it.copy(isLoggedIn = true, isLoading = false) }
-                    loadChannels()
-                }
-                .onFailure { throwable ->
-                    _state.update {
-                        it.copy(
-                            isLoading = false,
-                            error = throwable.toReadableMessage(),
-                        )
-                    }
-                }
+            loginInternal(username, password, saveCredentials = true)
         }
+    }
+
+    private suspend fun loginInternal(
+        username: String,
+        password: String,
+        saveCredentials: Boolean,
+    ) {
+        _state.update { it.copy(isLoading = true, error = null) }
+
+        repository.login(username, password)
+            .onSuccess {
+                if (saveCredentials) {
+                    credentialsStore.save(username, password)
+                }
+                _state.update {
+                    it.copy(
+                        username = username,
+                        password = password,
+                        isLoggedIn = true,
+                        isLoading = false,
+                        error = null,
+                    )
+                }
+                loadChannels()
+            }
+            .onFailure { throwable ->
+                if (throwable is ChatRepository.HttpException && throwable.code == HTTP_UNAUTHORIZED) {
+                    credentialsStore.clear()
+                }
+                _state.update {
+                    it.copy(
+                        isLoggedIn = false,
+                        isLoading = false,
+                        error = throwable.toReadableMessage(isLogin = true),
+                    )
+                }
+            }
     }
 
     fun logout() {
@@ -113,10 +143,14 @@ class ChatViewModel(
     }
 
     fun openChannel(channel: String) {
+        if (_state.value.selectedChannel == channel) return
+
         _state.update {
             it.copy(
                 selectedChannel = channel,
                 messages = emptyList(),
+                hasMoreMessages = true,
+                messageText = "",
                 error = null,
             )
         }
@@ -128,7 +162,9 @@ class ChatViewModel(
             it.copy(
                 selectedChannel = null,
                 messages = emptyList(),
+                hasMoreMessages = true,
                 messageText = "",
+                openedImagePath = null,
                 error = null,
             )
         }
@@ -146,6 +182,7 @@ class ChatViewModel(
                         it.copy(
                             isLoading = false,
                             messages = messages,
+                            hasMoreMessages = messages.size == ChatRepository.PAGE_SIZE,
                         )
                     }
                 }
@@ -153,6 +190,44 @@ class ChatViewModel(
                     _state.update {
                         it.copy(
                             isLoading = false,
+                            error = throwable.toReadableMessage(),
+                        )
+                    }
+                }
+        }
+    }
+
+    fun loadOlderMessages() {
+        val current = _state.value
+        val channel = current.selectedChannel ?: return
+        val firstMessageId = current.messages.minOfOrNull { messageIdAsLong(it.id) } ?: return
+        if (current.isLoadingMore || !current.hasMoreMessages) return
+
+        viewModelScope.launch {
+            _state.update { it.copy(isLoadingMore = true, error = null) }
+
+            repository.fetchMessages(
+                channel = channel,
+                lastKnownId = firstMessageId,
+                reverse = true,
+            )
+                .onSuccess { olderMessages ->
+                    _state.update { oldState ->
+                        val merged = (olderMessages + oldState.messages)
+                            .distinctBy { it.id }
+                            .sortedBy { messageIdAsLong(it.id) }
+
+                        oldState.copy(
+                            isLoadingMore = false,
+                            messages = merged,
+                            hasMoreMessages = olderMessages.size == ChatRepository.PAGE_SIZE,
+                        )
+                    }
+                }
+                .onFailure { throwable ->
+                    _state.update {
+                        it.copy(
+                            isLoadingMore = false,
                             error = throwable.toReadableMessage(),
                         )
                     }
@@ -205,9 +280,13 @@ class ChatViewModel(
         return from == _state.value.username.trim()
     }
 
-    private fun Throwable.toReadableMessage(): String {
+    private fun Throwable.toReadableMessage(isLogin: Boolean = false): String {
         return when (this) {
-            is ChatRepository.HttpException -> "Ошибка сервера: HTTP $code"
+            is ChatRepository.HttpException -> when {
+                isLogin && code == HTTP_UNAUTHORIZED -> "Неверный логин / пароль"
+                code == HTTP_UNAUTHORIZED -> "Сессия истекла. Войдите заново."
+                else -> "Ошибка сервера: HTTP $code"
+            }
             else -> message ?: "Неизвестная ошибка"
         }
     }
@@ -220,5 +299,9 @@ class ChatViewModel(
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             return ChatViewModel(repository, credentialsStore) as T
         }
+    }
+
+    private companion object {
+        const val HTTP_UNAUTHORIZED = 401
     }
 }
