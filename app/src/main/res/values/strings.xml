@@ -36,4 +36,6 @@
     <string name="error_http">Ошибка сервера: HTTP %1$d</string>
     <string name="error_unknown">Неизвестная ошибка</string>
     <string name="error_empty_token">Сервер вернул пустой токен</string>
+    <string name="offline_cached_data">Нет сети. Показаны сохранённые данные.</string>
+    <string name="message_saved_offline">Нет сети. Сообщение сохранено и будет отправлено после подключения.</string>
 </resources>

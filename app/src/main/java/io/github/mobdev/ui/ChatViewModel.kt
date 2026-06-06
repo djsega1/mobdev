@@ -4,25 +4,32 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import io.github.mobdev.R
+import io.github.mobdev.data.cache.ChatCacheStore
 import io.github.mobdev.data.mapper.messageIdAsLong
+import io.github.mobdev.data.network.NetworkMonitor
 import io.github.mobdev.data.repository.ChatRepository
 import io.github.mobdev.data.session.CredentialsStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class ChatViewModel(
     private val repository: ChatRepository,
     private val credentialsStore: CredentialsStore,
+    private val cacheStore: ChatCacheStore,
+    private val networkMonitor: NetworkMonitor,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ChatUiState())
     val state: StateFlow<ChatUiState> = _state.asStateFlow()
 
     init {
+        observeNetwork()
+
         viewModelScope.launch {
             val saved = credentialsStore.savedCredentials.first()
             if (saved != null) {
@@ -100,13 +107,36 @@ class ChatViewModel(
             .onFailure { throwable ->
                 if (throwable is ChatRepository.HttpException && throwable.code == HTTP_UNAUTHORIZED) {
                     credentialsStore.clear()
+                    _state.update {
+                        it.copy(
+                            isLoggedIn = false,
+                            isLoading = false,
+                            error = throwable.toReadableMessage(isLogin = true),
+                        )
+                    }
+                    return@onFailure
                 }
-                _state.update {
-                    it.copy(
-                        isLoggedIn = false,
-                        isLoading = false,
-                        error = throwable.toReadableMessage(isLogin = true),
-                    )
+
+                val cachedChannels = cacheStore.loadChannels()
+                if (cachedChannels.isNotEmpty()) {
+                    _state.update {
+                        it.copy(
+                            username = username,
+                            password = password,
+                            isLoggedIn = true,
+                            isLoading = false,
+                            channels = cachedChannels,
+                            error = UiText(R.string.offline_cached_data),
+                        )
+                    }
+                } else {
+                    _state.update {
+                        it.copy(
+                            isLoggedIn = false,
+                            isLoading = false,
+                            error = throwable.toReadableMessage(isLogin = true),
+                        )
+                    }
                 }
             }
     }
@@ -125,18 +155,26 @@ class ChatViewModel(
 
             repository.fetchChannels()
                 .onSuccess { channels ->
+                    cacheStore.saveChannels(channels)
                     _state.update {
                         it.copy(
                             isLoading = false,
                             channels = channels,
                         )
                     }
+                    sendPendingMessages()
                 }
                 .onFailure { throwable ->
+                    val cachedChannels = cacheStore.loadChannels()
                     _state.update {
                         it.copy(
                             isLoading = false,
-                            error = throwable.toReadableMessage(),
+                            channels = if (cachedChannels.isNotEmpty()) cachedChannels else it.channels,
+                            error = if (cachedChannels.isNotEmpty()) {
+                                UiText(R.string.offline_cached_data)
+                            } else {
+                                throwable.toReadableMessage()
+                            },
                         )
                     }
                 }
@@ -179,19 +217,30 @@ class ChatViewModel(
 
             repository.fetchMessages(channel = targetChannel)
                 .onSuccess { messages ->
+                    cacheStore.saveMessages(targetChannel, messages)
+                    val pending = cacheStore.loadPendingMessages(targetChannel).map { it.toChatMessage() }
                     _state.update {
                         it.copy(
                             isLoading = false,
-                            messages = messages,
+                            messages = mergeMessages(messages, pending),
                             hasMoreMessages = messages.size == ChatRepository.PAGE_SIZE,
                         )
                     }
+                    sendPendingMessages()
                 }
                 .onFailure { throwable ->
+                    val cachedMessages = cacheStore.loadMessages(targetChannel)
+                    val pending = cacheStore.loadPendingMessages(targetChannel).map { it.toChatMessage() }
+                    val hasCache = cachedMessages.isNotEmpty() || pending.isNotEmpty()
                     _state.update {
                         it.copy(
                             isLoading = false,
-                            error = throwable.toReadableMessage(),
+                            messages = if (hasCache) mergeMessages(cachedMessages, pending) else it.messages,
+                            error = if (hasCache) {
+                                UiText(R.string.offline_cached_data)
+                            } else {
+                                throwable.toReadableMessage()
+                            },
                         )
                     }
                 }
@@ -213,10 +262,9 @@ class ChatViewModel(
                 reverse = true,
             )
                 .onSuccess { olderMessages ->
+                    cacheStore.saveMessages(channel, olderMessages)
                     _state.update { oldState ->
-                        val merged = (olderMessages + oldState.messages)
-                            .distinctBy { it.id }
-                            .sortedBy { messageIdAsLong(it.id) }
+                        val merged = mergeMessages(olderMessages, oldState.messages)
 
                         oldState.copy(
                             isLoadingMore = false,
@@ -243,6 +291,22 @@ class ChatViewModel(
         if (text.isBlank()) return
 
         viewModelScope.launch {
+            if (!current.isOnline) {
+                val pending = cacheStore.addPendingMessage(
+                    from = current.username.trim(),
+                    channel = channel,
+                    text = text,
+                )
+                _state.update {
+                    it.copy(
+                        messageText = "",
+                        messages = mergeMessages(it.messages, listOf(pending.toChatMessage())),
+                        error = UiText(R.string.message_saved_offline),
+                    )
+                }
+                return@launch
+            }
+
             _state.update { it.copy(isLoading = true, error = null) }
 
             repository.sendTextMessage(
@@ -255,14 +319,66 @@ class ChatViewModel(
                     loadMessages(channel)
                 }
                 .onFailure { throwable ->
+                    val pending = cacheStore.addPendingMessage(
+                        from = current.username.trim(),
+                        channel = channel,
+                        text = text,
+                    )
                     _state.update {
                         it.copy(
+                            messageText = "",
                             isLoading = false,
-                            error = throwable.toReadableMessage(),
+                            messages = mergeMessages(it.messages, listOf(pending.toChatMessage())),
+                            error = UiText(R.string.message_saved_offline),
                         )
                     }
                 }
         }
+    }
+
+
+    private fun observeNetwork() {
+        viewModelScope.launch {
+            networkMonitor.isOnline
+                .distinctUntilChanged()
+                .collect { isOnline ->
+                    val wasOffline = !_state.value.isOnline
+                    _state.update { it.copy(isOnline = isOnline) }
+                    if (isOnline && wasOffline && _state.value.isLoggedIn) {
+                        sendPendingMessages()
+                        loadChannels()
+                        _state.value.selectedChannel?.let { loadMessages(it) }
+                    }
+                }
+        }
+    }
+
+    private suspend fun sendPendingMessages() {
+        if (!_state.value.isOnline) return
+
+        val pendingMessages = cacheStore.loadPendingMessages()
+        pendingMessages.forEach { pending ->
+            repository.sendTextMessage(
+                username = pending.from,
+                channel = pending.channel,
+                text = pending.text,
+            ).onSuccess {
+                cacheStore.removePendingMessage(pending.localId)
+            }
+        }
+    }
+
+    private fun mergeMessages(
+        first: List<io.github.mobdev.data.domain.ChatMessage>,
+        second: List<io.github.mobdev.data.domain.ChatMessage>,
+    ): List<io.github.mobdev.data.domain.ChatMessage> {
+        return (first + second)
+            .distinctBy { it.id }
+            .sortedWith(
+                compareBy<io.github.mobdev.data.domain.ChatMessage> { it.id.startsWith(PENDING_PREFIX) }
+                    .thenBy { messageIdAsLong(it.id) }
+                    .thenBy { it.time ?: 0L },
+            )
     }
 
     fun openImage(path: String) {
@@ -296,14 +412,17 @@ class ChatViewModel(
     class Factory(
         private val repository: ChatRepository,
         private val credentialsStore: CredentialsStore,
+        private val cacheStore: ChatCacheStore,
+        private val networkMonitor: NetworkMonitor,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return ChatViewModel(repository, credentialsStore) as T
+            return ChatViewModel(repository, credentialsStore, cacheStore, networkMonitor) as T
         }
     }
 
     private companion object {
         const val HTTP_UNAUTHORIZED = 401
+        const val PENDING_PREFIX = "pending_"
     }
 }

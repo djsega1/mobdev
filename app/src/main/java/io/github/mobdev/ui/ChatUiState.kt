@@ -8,6 +8,7 @@ data class ChatUiState(
     val isLoggedIn: Boolean = false,
     val isLoading: Boolean = false,
     val isLoadingMore: Boolean = false,
+    val isOnline: Boolean = true,
     val channels: List<String> = emptyList(),
     val selectedChannel: String? = null,
     val messages: List<ChatMessage> = emptyList(),
