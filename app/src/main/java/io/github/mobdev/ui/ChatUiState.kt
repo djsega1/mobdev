@@ -14,5 +14,5 @@ data class ChatUiState(
     val hasMoreMessages: Boolean = true,
     val messageText: String = "",
     val openedImagePath: String? = null,
-    val error: String? = null,
+    val error: UiText? = null,
 )

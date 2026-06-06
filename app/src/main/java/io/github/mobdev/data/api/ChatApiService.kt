@@ -24,7 +24,7 @@ interface ChatApiService {
 
     @GET("channel/{channelName}")
     suspend fun getChannelMessages(
-        @Path(value = "channelName", encoded = true) channelName: String,
+        @Path("channelName") channelName: String,
         @Query("limit") limit: Int,
         @Query("lastKnownId") lastKnownId: Long,
         @Query("reverse") reverse: Boolean,

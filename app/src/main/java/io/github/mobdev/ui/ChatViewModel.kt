@@ -3,6 +3,7 @@ package io.github.mobdev.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import io.github.mobdev.R
 import io.github.mobdev.data.mapper.messageIdAsLong
 import io.github.mobdev.data.repository.ChatRepository
 import io.github.mobdev.data.session.CredentialsStore
@@ -38,7 +39,7 @@ class ChatViewModel(
         viewModelScope.launch {
             repository.unauthorized.collect {
                 credentialsStore.clear()
-                _state.value = ChatUiState(error = "Сессия истекла. Войдите заново.")
+                _state.value = ChatUiState(error = UiText(R.string.error_session_expired))
             }
         }
     }
@@ -64,7 +65,7 @@ class ChatViewModel(
         val password = _state.value.password
 
         if (username.isBlank() || password.isBlank()) {
-            _state.update { it.copy(error = "Введите логин и пароль") }
+            _state.update { it.copy(error = UiText(R.string.error_empty_credentials)) }
             return
         }
 
@@ -280,14 +281,15 @@ class ChatViewModel(
         return from == _state.value.username.trim()
     }
 
-    private fun Throwable.toReadableMessage(isLogin: Boolean = false): String {
+    private fun Throwable.toReadableMessage(isLogin: Boolean = false): UiText {
         return when (this) {
             is ChatRepository.HttpException -> when {
-                isLogin && code == HTTP_UNAUTHORIZED -> "Неверный логин / пароль"
-                code == HTTP_UNAUTHORIZED -> "Сессия истекла. Войдите заново."
-                else -> "Ошибка сервера: HTTP $code"
+                isLogin && code == HTTP_UNAUTHORIZED -> UiText(R.string.error_invalid_credentials)
+                code == HTTP_UNAUTHORIZED -> UiText(R.string.error_session_expired)
+                else -> UiText(R.string.error_http, listOf(code))
             }
-            else -> message ?: "Неизвестная ошибка"
+
+            else -> UiText(R.string.error_unknown)
         }
     }
 

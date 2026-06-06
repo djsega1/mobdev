@@ -9,8 +9,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,9 +40,7 @@ fun LoginScreen(
         OutlinedTextField(
             value = state.username,
             onValueChange = onUsernameChange,
-            label = {
-                Text(text = stringResource(R.string.login_hint))
-            },
+            label = { Text(text = stringResource(R.string.login_hint)) },
             singleLine = true,
             modifier = Modifier
                 .fillMaxWidth()
@@ -52,9 +50,7 @@ fun LoginScreen(
         OutlinedTextField(
             value = state.password,
             onValueChange = onPasswordChange,
-            label = {
-                Text(text = stringResource(R.string.password_hint))
-            },
+            label = { Text(text = stringResource(R.string.password_hint)) },
             singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -68,11 +64,11 @@ fun LoginScreen(
                 onDismissRequest = onErrorDismiss,
                 confirmButton = {
                     TextButton(onClick = onErrorDismiss) {
-                        Text("OK")
+                        Text(text = stringResource(R.string.dialog_ok))
                     }
                 },
-                title = { Text("Ошибка входа") },
-                text = { Text(error) },
+                title = { Text(text = stringResource(R.string.login_error_title)) },
+                text = { Text(text = error.asString()) },
             )
         }
 

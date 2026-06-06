@@ -2,6 +2,7 @@ package io.github.mobdev.ui
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,8 +19,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import io.github.mobdev.R
 
 @Composable
 fun ChannelListScreen(
@@ -35,12 +39,12 @@ fun ChannelListScreen(
             .padding(16.dp),
     ) {
         Text(
-            text = "Каналы",
+            text = stringResource(R.string.channels_title),
             style = MaterialTheme.typography.headlineSmall,
         )
 
         Text(
-            text = "Пользователь: ${state.username}",
+            text = stringResource(R.string.user_label, state.username),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -55,37 +59,46 @@ fun ChannelListScreen(
                 onClick = onRefreshClick,
                 modifier = Modifier.weight(1f),
             ) {
-                Text("Обновить")
+                Text(text = stringResource(R.string.refresh_button))
             }
 
             OutlinedButton(
                 onClick = onLogoutClick,
                 modifier = Modifier.weight(1f),
             ) {
-                Text("Выйти")
+                Text(text = stringResource(R.string.logout_button))
             }
         }
 
         if (state.error != null) {
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = state.error,
+                text = state.error.asString(),
                 color = MaterialTheme.colorScheme.error,
             )
         }
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            items(state.channels) { channel ->
-                ChannelItem(
-                    channel = channel,
-                    selected = channel == state.selectedChannel,
-                    onClick = { onChannelClick(channel) },
-                )
+        if (state.channels.isEmpty() && !state.isLoading) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(text = stringResource(R.string.empty_chats))
+            }
+        } else {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                items(state.channels) { channel ->
+                    ChannelItem(
+                        channel = channel,
+                        selected = channel == state.selectedChannel,
+                        onClick = { onChannelClick(channel) },
+                    )
+                }
             }
         }
     }

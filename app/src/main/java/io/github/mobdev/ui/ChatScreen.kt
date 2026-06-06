@@ -28,9 +28,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import io.github.mobdev.R
 import io.github.mobdev.data.domain.ChatMessage
 import io.github.mobdev.data.domain.MessageContent
 import java.text.SimpleDateFormat
@@ -46,7 +48,7 @@ fun ChatScreen(
     val selectedChannel = state.selectedChannel
     val listState = rememberLazyListState()
 
-    LaunchedEffect(state.messages.size) {
+    LaunchedEffect(selectedChannel, state.messages.lastOrNull()?.id) {
         if (state.messages.isNotEmpty()) {
             listState.animateScrollToItem(state.messages.lastIndex)
         }
@@ -60,16 +62,19 @@ fun ChatScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = viewModel::closeChannel) {
-                Text("‹", style = MaterialTheme.typography.headlineMedium)
+                Text(
+                    text = stringResource(R.string.back_button),
+                    style = MaterialTheme.typography.labelLarge,
+                )
             }
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = selectedChannel ?: "Выберите канал",
+                    text = selectedChannel ?: stringResource(R.string.choose_chat),
                     style = MaterialTheme.typography.titleLarge,
                 )
                 Text(
-                    text = "Сообщений: ${state.messages.size}",
+                    text = stringResource(R.string.message_count, state.messages.size),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -79,7 +84,7 @@ fun ChatScreen(
                 onClick = { viewModel.loadMessages() },
                 enabled = selectedChannel != null && !state.isLoading,
             ) {
-                Text("Обновить")
+                Text(text = stringResource(R.string.refresh_button))
             }
         }
 
@@ -90,14 +95,14 @@ fun ChatScreen(
                     .weight(1f),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("Выберите канал слева")
+                Text(text = stringResource(R.string.choose_chat_left))
             }
             return@Column
         }
 
         if (state.error != null) {
             Text(
-                text = state.error,
+                text = state.error.asString(),
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(horizontal = 16.dp),
             )
@@ -112,13 +117,18 @@ fun ChatScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (state.hasMoreMessages && state.messages.isNotEmpty()) {
-                item(key = "load_more") {
+                item(key = LOAD_MORE_KEY) {
                     Button(
                         onClick = viewModel::loadOlderMessages,
                         enabled = !state.isLoadingMore,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text(if (state.isLoadingMore) "Загрузка..." else "Загрузить ещё")
+                        val textRes = if (state.isLoadingMore) {
+                            R.string.loading_more
+                        } else {
+                            R.string.load_more
+                        }
+                        Text(text = stringResource(textRes))
                     }
                 }
             }
@@ -185,7 +195,7 @@ private fun MessageBubble(
                     is MessageContent.Image -> {
                         AsyncImage(
                             model = imageUrl(content.link),
-                            contentDescription = "Изображение",
+                            contentDescription = stringResource(R.string.image_content_description),
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
                                 .size(220.dp)
@@ -194,7 +204,7 @@ private fun MessageBubble(
                     }
 
                     MessageContent.Unknown -> {
-                        Text("Неподдерживаемое сообщение")
+                        Text(text = stringResource(R.string.unsupported_message))
                     }
                 }
 
@@ -229,7 +239,7 @@ private fun MessageInput(
             value = text,
             onValueChange = onTextChange,
             modifier = Modifier.weight(1f),
-            placeholder = { Text("Сообщение") },
+            placeholder = { Text(text = stringResource(R.string.message_hint)) },
             enabled = enabled,
             maxLines = 4,
         )
@@ -238,7 +248,7 @@ private fun MessageInput(
             onClick = onSendClick,
             enabled = enabled && text.isNotBlank(),
         ) {
-            Text("Отправить")
+            Text(text = stringResource(R.string.send_button))
         }
     }
 }
@@ -246,3 +256,5 @@ private fun MessageInput(
 private fun Long.toReadableTime(): String {
     return SimpleDateFormat("dd.MM HH:mm", Locale.getDefault()).format(Date(this))
 }
+
+private const val LOAD_MORE_KEY = "load_more"
